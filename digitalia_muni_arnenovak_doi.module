@@ -1,0 +1,133 @@
+<?php
+
+use Drupal\Component\Utility\Xss;
+
+/**
+ * @file
+ * Primary module hooks for Digitalia muni Arnenovak doi generator.
+ */
+
+/*
+ * Implements hook_doi_datacite_json_alter().
+ *
+ * @param object $entity
+ *   The node.
+ * @param mixed $extra
+ *   The node edit form state or data from the Views Bulk Operations action.
+ * @param string $datacite_json
+ *   The DataCite JSON. See https://support.datacite.org/docs/api-create-dois
+ *   for more information.
+ */
+function digitalia_muni_arnenovak_doi_doi_datacite_json_alter($entity, $extra, &$datacite_json)
+{
+	// TODO: filter more precisely
+	if (!in_array($entity->bundle(), ["book", "part"])) {
+		return;
+	}
+
+	$obj = json_decode($datacite_json, true);
+	$config = \Drupal::config("digitalia_muni_arnenovak_doi.settings");
+
+	$creators = $entity->get("field_author")->getValue();
+	$publishers = array();
+	$out_creators = array();
+	$out_publishers= array();
+
+	if ($entity->bundle() === "book") {
+		$publishers = $entity->get("field_publisher")->value;
+	}
+
+	if ($entity->bundle() === "part") {
+		$works = $entity->get("field_book")->getValue();
+		foreach ($works as $work) {
+			$book = \Drupal::entityTypeManager()->getStorage("node")->load($work["target_id"]);
+			array_push($publishers, $book->get("field_publisher")->getValue());
+		}
+	}
+
+	foreach ($creators as $creator_id) {
+		$creator = \Drupal::entityTypeManager()->getStorage("node")->load($creator_id["target_id"]);
+		array_push($out_creators, get_output_creator($creator));
+	}
+
+	foreach ($publishers as $publisher) {
+		array_push($out_publishers, get_output_publisher($publisher[0]));
+	}
+
+	// publicationYear
+	$publication_year = $entity->get("field_published")->getValue()[0]["value"];
+
+	// resourceTypeGeneral
+	$datacite_resource_type = "Other";
+
+	if ($entity->bundle() === "book") {
+		$datacite_resource_type = "Book";
+	}
+
+	if ($entity->bundle() === "part") {
+		$datacite_resource_type = "BookChapter";
+	}
+
+
+	// Populate output json
+	$obj["data"]["attributes"]["creators"] = $out_creators;
+	// only one publisher is permitted
+	$obj["data"]["attributes"]["publisher"] = $out_publishers[0];
+	$obj["data"]["attributes"]["types"]["resourceTypeGeneral"] = $datacite_resource_type;
+	$obj["data"]["attributes"]["publicationYear"] = $publication_year;
+
+	// useless until update action is implemented
+	if (!empty($entity->get("field_doi")->getValue())) {
+		unset($obj["data"]["attributes"]["event"]);
+		unset($obj["data"]["id"]);
+	}
+
+	$datacite_json = json_encode($obj);
+}
+
+/**
+ * Crashes drupal, useful for stopping request to DOI api
+ */
+function do_crash()
+{
+	array_keys($jdasklfjklj);
+}
+
+
+/**
+ * Returns array representation of creator with name, nameType and identifier fields filled
+ *
+ * @param ContentEntityBase $creator
+ *
+ * @return array
+ */
+function get_output_creator($creator)
+{
+	$out_creator = array();
+
+	if ($creator->bundle() == "author") {
+		$out_creator["name"] = $creator->get("title")->value;
+		$out_creator["nameType"] = "Personal";
+	}
+
+	if (!empty($out_creator)) {
+		return $out_creator;
+	}
+}
+
+/**
+ * Returns array representation of publisher with name and identifier fields filled
+ *
+ * @param ContentEntityBase $publisher
+ *
+ * @return array
+ */
+function get_output_publisher($publisher)
+{
+	$out_publisher = array();
+	$out_publisher["name"] = $publisher["value"];
+
+	if (!empty($out_publisher)) {
+		return $out_publisher;
+	}
+}

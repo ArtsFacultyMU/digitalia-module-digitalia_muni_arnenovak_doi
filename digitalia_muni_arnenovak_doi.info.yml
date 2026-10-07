@@ -1,0 +1,7 @@
+name: 'Digitalia MUNI Arnenovak DOI DataCite'
+type: module
+description: 'DataCite mapping for Arnenovak content types'
+package: digitalia
+core_version_requirement: ^10 || ^11
+dependencies:
+  - doi_datacite
